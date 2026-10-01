@@ -1,0 +1,256 @@
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { ArrowLeft, Eye, Heart, MessageCircle, Bookmark, Share2, Repeat2, Loader2, Save, Zap, Timer, Instagram } from "lucide-react";
+import { Link } from "react-router-dom";
+import { PageMeta } from "@/components/seo/PageMeta";
+import logo from "@/assets/logo.png";
+import { InstagramAccountsPanel } from "@/components/instagram/InstagramAccountsPanel";
+
+type Preset = {
+  views: number;
+  likes: number;
+  comments: number;
+  saves: number;
+  shares: number;
+  reposts: number;
+  drip_minutes: number;
+  drip_percent_per_run: number;
+  delivery_hours: number;
+  mode: "auto" | "manual";
+};
+
+const DEFAULTS: Preset = {
+  views: 5000,
+  likes: 500,
+  comments: 0,
+  saves: 0,
+  shares: 0,
+  reposts: 0,
+  drip_minutes: 60,
+  drip_percent_per_run: 5,
+  delivery_hours: 24,
+  mode: "manual",
+};
+
+const FIELDS: { key: keyof Preset; label: string; icon: typeof Eye }[] = [
+  { key: "views", label: "Views", icon: Eye },
+  { key: "likes", label: "Likes", icon: Heart },
+  { key: "comments", label: "Comments", icon: MessageCircle },
+  { key: "saves", label: "Saves", icon: Bookmark },
+  { key: "shares", label: "Shares", icon: Share2 },
+  { key: "reposts", label: "Reposts", icon: Repeat2 },
+];
+
+const HOUR_PRESETS = [6, 12, 24, 48, 72, 168];
+
+function deriveSchedule(hours: number) {
+  const h = Math.min(168, Math.max(1, hours));
+  const runs = Math.min(48, Math.max(2, Math.round(h)));
+  const intervalMinutes = Math.max(5, Math.round((h * 60) / runs));
+  const percentPerRun = Math.max(1, Math.round(100 / runs));
+  return { runs, intervalMinutes, percentPerRun };
+}
+
+export default function AutoBoost() {
+  const { user } = useAuth();
+  const [preset, setPreset] = useState<Preset>(DEFAULTS);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const { data } = await supabase
+        .from("engagement_presets")
+        .select("views,likes,comments,saves,shares,reposts,drip_minutes,drip_percent_per_run,delivery_hours,mode")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (data) {
+        setPreset({
+          views: data.views ?? 0,
+          likes: data.likes ?? 0,
+          comments: data.comments ?? 0,
+          saves: data.saves ?? 0,
+          shares: data.shares ?? 0,
+          reposts: data.reposts ?? 0,
+          drip_minutes: data.drip_minutes ?? 0,
+          drip_percent_per_run: data.drip_percent_per_run ?? 0,
+          delivery_hours: data.delivery_hours ?? 24,
+          mode: (data.mode as "auto" | "manual") ?? "manual",
+        });
+      }
+      setLoading(false);
+    })();
+  }, [user?.id]);
+
+  const setNum = (key: keyof Preset, value: string) =>
+    setPreset((p) => ({ ...p, [key]: Math.max(0, Math.floor(Number(value) || 0)) }));
+
+  const total = FIELDS.reduce((s, f) => s + (preset[f.key] as number), 0);
+  const hours = preset.delivery_hours;
+  const schedule = deriveSchedule(hours);
+  const durationText = hours >= 24 ? `${(hours / 24).toFixed(hours % 24 === 0 ? 0 : 1)} din` : `${hours} ghante`;
+
+  const save = async () => {
+    if (!user) return;
+    if (total === 0) {
+      toast.error("Set at least one quantity");
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.from("engagement_presets").upsert(
+      {
+        user_id: user.id,
+        ...preset,
+        mode: "auto",
+        delivery_hours: hours,
+        drip_minutes: schedule.intervalMinutes,
+        drip_percent_per_run: schedule.percentPerRun,
+      },
+      { onConflict: "user_id" },
+    );
+    setSaving(false);
+    if (error) return toast.error(error.message);
+    toast.success("Auto-boost settings saved");
+  };
+
+  return (
+    <div className="mx-auto max-w-2xl p-4 space-y-4 pb-24">
+      <PageMeta
+        title="Auto Boost Settings | OrganicSMM Pro"
+        description="Set how many views, likes, comments, saves and shares are sent automatically on every new Instagram post."
+      />
+
+      <div className="relative overflow-hidden rounded-2xl border border-primary/25 bg-gradient-to-br from-primary/15 via-background to-background p-4 sm:p-5">
+        <div aria-hidden className="absolute -top-14 -right-10 w-48 h-48 rounded-full bg-primary/20 blur-3xl" />
+        <div className="relative flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <Link
+              to="/engagement-order"
+              aria-label="OrganicSMM Pro — Full Engagement"
+              className="shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-xl overflow-hidden ring-1 ring-primary/40 shadow-[0_0_24px_hsl(var(--primary)/0.3)] transition-transform hover:scale-105"
+            >
+              <img src={logo} alt="OrganicSMM Pro logo" className="w-full h-full object-cover" />
+            </Link>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Auto Boost</h1>
+                <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.14em] px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/40">
+                  <Zap className="w-2.5 h-2.5" /> New post → auto order
+                </span>
+              </div>
+              <p className="text-muted-foreground text-xs sm:text-sm mt-1">
+                Decide how many views / likes / comments / saves / shares each new post gets — manage it all here.
+              </p>
+            </div>
+          </div>
+          <Button asChild variant="outline" size="sm" className="shrink-0">
+            <Link to="/engagement-order"><ArrowLeft className="w-4 h-4 mr-1" /> Home</Link>
+          </Button>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Instagram className="w-4 h-4" /> Instagram accounts</CardTitle>
+          <CardDescription>
+            Link your Instagram usernames — Auto Boost runs on their new posts.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <InstagramAccountsPanel />
+        </CardContent>
+      </Card>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-muted-foreground">
+          <Loader2 className="w-5 h-5 animate-spin" />
+        </div>
+      ) : (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Per-post quantities</CardTitle>
+              <CardDescription>Total per post: {total.toLocaleString()}</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              {FIELDS.map(({ key, label, icon: Icon }) => (
+                <div key={key}>
+                  <Label className="flex items-center gap-2 text-muted-foreground">
+                    <Icon className="w-3.5 h-3.5" /> {label}
+                  </Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={preset[key] as number}
+                    onChange={(e) => setNum(key, e.target.value)}
+                  />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Timer className="w-4 h-4" /> Delivery time</CardTitle>
+              <CardDescription>
+                Exactly like the full engagement page — pick a window (e.g. 72 hours) and the organic engine spreads the
+                quantity with random run times and random batch sizes. Likes, comments, saves, shares and reposts follow
+                the views curve. No drip-feed, no fixed repeats.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                {HOUR_PRESETS.map((h) => (
+                  <Button
+                    key={h}
+                    type="button"
+                    size="sm"
+                    variant={preset.delivery_hours === h ? "default" : "outline"}
+                    onClick={() => setPreset((p) => ({ ...p, delivery_hours: h }))}
+                  >
+                    {h < 24 ? `${h}h` : `${h / 24}d`}
+                  </Button>
+                ))}
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Custom (hours, 1–168)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={168}
+                  value={preset.delivery_hours}
+                  onChange={(e) =>
+                    setPreset((p) => ({
+                      ...p,
+                      delivery_hours: Math.min(168, Math.max(1, Math.floor(Number(e.target.value) || 1))),
+                    }))
+                  }
+                />
+              </div>
+              <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm">
+                Delivery completes in about <b>{durationText}</b> — the engine schedules roughly{" "}
+                <b>{schedule.runs} runs</b> at randomized times inside that window, each with a randomized quantity.
+                <div className="text-muted-foreground text-xs mt-1">
+                  Example: {preset.views.toLocaleString()} views → ~
+                  {Math.max(1, Math.ceil(preset.views / schedule.runs)).toLocaleString()} views per run on average, with
+                  likes/comments/saves/shares ramping alongside the views.
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Button onClick={save} disabled={saving} className="w-full h-11">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4 mr-2" /> Save settings</>}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}

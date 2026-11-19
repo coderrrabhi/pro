@@ -36,7 +36,8 @@ export interface FullOrganicConfig {
 export const PROVIDER_MINIMUMS: Record<string, number> = {
   views: 100,
   likes: 10,
-  comments: 10,
+  comments: 1,
+  reposts: 1,
   saves: 10,
   shares: 10,
 };

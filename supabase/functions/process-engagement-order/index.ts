@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { normalizePreviewRuns, type ScheduledRunInput } from '../_shared/schedule-runs.ts'
+import { organicizeSchedule } from '../_shared/organic-randomize.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -597,6 +598,15 @@ serve(async (req) => {
               }
             }
             validatedEntries.forEach((e, i) => e.run_number = i + 1)
+          }
+
+          // ORGANIC: random, never-repeating sizes and irregular gaps, same total & window
+          if (validatedEntries.length > 0) {
+            try {
+              validatedEntries = organicizeSchedule(validatedEntries, { total: totalTargetQty, providerMin, exactRuns: requestedRuns > 0 })
+                .map((e: any, i: number) => ({ ...e, run_number: i + 1, status: 'pending' }))
+              console.log(`organic [${engType}]: ${validatedEntries.map((e: any) => e.quantity_to_send).join(',')}`)
+            } catch (e) { console.error('organicize failed', (e as Error)?.message) }
           }
 
           if (validatedEntries.length > 0) {
